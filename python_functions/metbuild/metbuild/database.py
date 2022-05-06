@@ -31,7 +31,7 @@ class Database:
     def bucket(self):
         return self.__bucket
 
-    def generate_file_list(self, service, param, start, end, storm, nowcast, multiple_forecasts):
+    def generate_file_list(self, service, param, start, end, storm, nowcast, multiple_forecasts, year, basin, advisory):
         import sys
         if service == "gfs-ncep":
             return self.generate_generic_file_list("gfs_ncep", param, start, end, nowcast, multiple_forecasts)
@@ -39,9 +39,29 @@ class Database:
             return self.generate_generic_file_list("nam_ncep", param, start, end, nowcast, multiple_forecasts)
         elif service == "hwrf":
             return self.generate_hwrf_file_list(start, end, storm)
+        elif service == "nhc":
+            return self.generate_nhc_file_list(year, basin, storm, advisory)
         else:
             print("ERROR: Invalid data type")
             sys.exit(1)
+
+    def generate_nhc_file_list(self, year, basin, storm, advisory):
+        sql_btk = "select * from nhc_btk where storm_year = {:04d} and basin = '{:s}' and storm = {:d}".format(year,basin,storm)
+        sql_fcst = "select * from nhc_fcst where storm_year = {:04d} and basin = '{:s}' and storm = {:d} and advisory = {:03d};".format(year,basin,storm,advisory)
+
+        self.cursor().execute(sql_btk)
+        result_btk = self.cursor().fetchall()
+
+        self.cursor().execute(sql_fcst)
+        result_fcst = self.cursor().fetchall()
+
+        file_list = {"advisory": None, "best_track": None}
+        if len(result_btk) > 0:
+            file_list["best_track"] = result_btk[0][7]
+        if len(result_fcst) > 0:
+            file_list["advisory"] = result_fcst[0][8]
+
+        return file_list
 
     def generate_generic_file_list(self, table, param_type, start, end, nowcast, multiple_forecasts):
         from datetime import timedelta
@@ -175,7 +195,7 @@ class Database:
             print("Ongoing restore for file: "+filepath)
 
 
-    def check_initiate_restore(self, db_path, service, time, dry_run=False) -> bool:
+    def check_initiate_restore(self, db_path, service, dry_run=False) -> bool:
         if dry_run:
           return False
         archive_status = self.check_archive_status(db_path)
@@ -185,12 +205,16 @@ class Database:
         return False
 
 
-    def get_file(self, db_path, service, time, dry_run=False):
+    def get_file(self, db_path, service, time=None, dry_run=False):
         import tempfile
         import os
         fn = db_path.split("/")[-1]
-        local_path = tempfile.gettempdir(
-        ) + "/" + service + "." + time.strftime("%Y%m%d%H%M") + "." + fn
+        if service == "nhc":
+            local_path = tempfile.gettempdir()+"/"+service+"."+fn
+            self.s3client().download_file(self.bucket(), db_path, local_path)
+        else:
+            local_path = tempfile.gettempdir(
+            ) + "/" + service + "." + time.strftime("%Y%m%d%H%M") + "." + fn
         if not dry_run:
             if not os.path.exists(local_path):
               self.s3client().download_file(self.bucket(), db_path,
