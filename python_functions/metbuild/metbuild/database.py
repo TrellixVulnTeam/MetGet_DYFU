@@ -85,7 +85,7 @@ class Database:
             return self.generate_generic_file_list(
                 "hrrr_ncep", param, start, end, nowcast, multiple_forecasts
             )
-        elif service == "hrrr-conus": 
+        elif service == "hrrr-alaska": 
             return self.generate_generic_file_list(
                 "hrrr_alaska_ncep", param, start, end, nowcast, multiple_forecasts
             )
